@@ -85,9 +85,11 @@ function renderLinedPaper(
   const { pageWidth, pageHeight, marginLeft, marginTop, marginBottom, lineSpacing, fontSize } = config;
   const spacing = lineSpacing || fontSize * config.style.lineHeightMultiplier;
 
+  const resScale = config.resolutionScale || 1.0;
+
   // Red margin line
   ctx.strokeStyle = "rgba(220, 80, 80, 0.35)";
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.5 * resScale;
   ctx.beginPath();
   ctx.moveTo(marginLeft - 8, 0);
   ctx.lineTo(marginLeft - 8, pageHeight);
@@ -95,7 +97,7 @@ function renderLinedPaper(
 
   // Horizontal blue lines
   ctx.strokeStyle = "rgba(120, 160, 220, 0.25)";
-  ctx.lineWidth = 0.8;
+  ctx.lineWidth = 0.8 * resScale;
 
   let y = marginTop + fontSize; // first baseline
   while (y < pageHeight - marginBottom) {
@@ -108,7 +110,7 @@ function renderLinedPaper(
 
   // Header line (thicker)
   ctx.strokeStyle = "rgba(120, 160, 220, 0.4)";
-  ctx.lineWidth = 1.2;
+  ctx.lineWidth = 1.2 * resScale;
   ctx.beginPath();
   ctx.moveTo(0, marginTop - 4);
   ctx.lineTo(pageWidth, marginTop - 4);
@@ -122,8 +124,10 @@ function renderGridPaper(
   const { pageWidth, pageHeight } = config;
   const gridSize = 20; // 5mm grid at ~4px/mm
 
+  const resScale = config.resolutionScale || 1.0;
+
   ctx.strokeStyle = "rgba(150, 180, 210, 0.2)";
-  ctx.lineWidth = 0.5;
+  ctx.lineWidth = 0.5 * resScale;
 
   // Vertical lines
   for (let x = gridSize; x < pageWidth; x += gridSize) {
@@ -143,7 +147,7 @@ function renderGridPaper(
 
   // Thicker lines every 5 cells (1cm)
   ctx.strokeStyle = "rgba(150, 180, 210, 0.35)";
-  ctx.lineWidth = 0.8;
+  ctx.lineWidth = 0.8 * resScale;
   for (let x = gridSize * 5; x < pageWidth; x += gridSize * 5) {
     ctx.beginPath();
     ctx.moveTo(x, 0);

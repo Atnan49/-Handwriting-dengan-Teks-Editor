@@ -10,9 +10,11 @@ import {
   type PaperType,
   splitTextIntoPages,
   renderHandwritingPage,
+  renderLayoutPage,
 } from "@/lib/handwritingEngine";
 import { renderPaperBackground, renderPhotoEffect } from "@/lib/paperRenderer";
 import { parsePdf, blocksToHtml } from "@/lib/pdfParser";
+import { parseDocx } from "@/lib/docxParser";
 import {
   downloadPageAsImage,
   downloadAllAsPdf,
@@ -47,6 +49,7 @@ const DEFAULT_CONFIG: RenderConfig = {
   marginBottom: 56,
   lineSpacing: 0, // auto-calculate
   seed: Math.floor(Math.random() * 100000),
+  resolutionScale: 2,
 };
 
 export default function ConvertPage() {
@@ -60,6 +63,8 @@ export default function ConvertPage() {
   const [renderedPages, setRenderedPages] = useState<HTMLCanvasElement[]>([]);
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [pdfLayoutPages, setPdfLayoutPages] = useState<any[]>([]);
+  const [layoutMode, setLayoutMode] = useState<"1to1" | "reflow">("1to1");
 
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,22 +73,38 @@ export default function ConvertPage() {
 
   // ─── File handling ──────────────────────────────────────────────────────
   const handleFile = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      alert("Harap upload file PDF.");
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (ext !== "pdf" && ext !== "docx") {
+      alert("Harap upload file PDF atau DOCX.");
       return;
     }
     setIsProcessing(true);
     setFileName(file.name);
     try {
-      const doc = await parsePdf(file);
-      // Map parsed blocks directly to HTML for the rich text editor
-      const allHtml = blocksToHtml(doc.pages.flatMap((p) => p.blocks));
-      setRawText(allHtml);
-      setEditedText(allHtml);
+      if (ext === "pdf") {
+        const doc = await parsePdf(file);
+        // Map parsed blocks page-by-page to HTML, preserving original page breaks
+        const pageHtmls = doc.pages.map((p) => blocksToHtml(p.blocks));
+        const allHtml = pageHtmls.join('<hr class="page-break" />');
+        setRawText(allHtml);
+        setEditedText(allHtml);
+        
+        // Save coordinate layout items
+        const layouts = doc.pages.map((p) => p.layoutPage).filter(Boolean);
+        setPdfLayoutPages(layouts);
+        setLayoutMode("1to1"); // default to original layout preservation
+      } else {
+        // Parse DOCX directly to clean HTML
+        const html = await parseDocx(file);
+        setRawText(html);
+        setEditedText(html);
+        setPdfLayoutPages([]);
+        setLayoutMode("reflow"); // default to reflow for Word documents
+      }
       setStep("edit");
     } catch (err) {
       console.error(err);
-      alert("Gagal membaca PDF. Pastikan file tidak rusak atau terproteksi.");
+      alert("Gagal membaca file. Pastikan file tidak rusak atau terproteksi.");
     } finally {
       setIsProcessing(false);
     }
@@ -109,16 +130,39 @@ export default function ConvertPage() {
 
   // ─── Preview rendering ─────────────────────────────────────────────────
   const renderPreviewPage = useCallback(
-    (text: string, cfg: RenderConfig, canvas: HTMLCanvasElement, imageCache: Record<string, HTMLImageElement> = {}) => {
-      canvas.width = cfg.pageWidth;
-      canvas.height = cfg.pageHeight;
+    (text: string, cfg: RenderConfig, canvas: HTMLCanvasElement, imageCache: Record<string, HTMLImageElement> = {}, pageIdx?: number) => {
+      const resScale = cfg.resolutionScale || 2.0;
+
+      // Scale coordinates and sizing dynamically based on resolution multiplier
+      const scaledCfg: RenderConfig = {
+        ...cfg,
+        pageWidth: cfg.pageWidth * resScale,
+        pageHeight: cfg.pageHeight * resScale,
+        fontSize: cfg.fontSize * resScale,
+        marginLeft: cfg.marginLeft * resScale,
+        marginRight: cfg.marginRight * resScale,
+        marginTop: cfg.marginTop * resScale,
+        marginBottom: cfg.marginBottom * resScale,
+        lineSpacing: cfg.lineSpacing ? cfg.lineSpacing * resScale : 0,
+      };
+
+      canvas.width = scaledCfg.pageWidth;
+      canvas.height = scaledCfg.pageHeight;
       const ctx = canvas.getContext("2d")!;
-      ctx.clearRect(0, 0, cfg.pageWidth, cfg.pageHeight);
-      renderPaperBackground(ctx, cfg);
-      renderHandwritingPage(ctx, text, cfg, imageCache);
-      renderPhotoEffect(ctx, cfg.pageWidth, cfg.pageHeight);
+      ctx.clearRect(0, 0, scaledCfg.pageWidth, scaledCfg.pageHeight);
+      renderPaperBackground(ctx, scaledCfg);
+
+      const isUneditedPdf = layoutMode === "1to1" && pdfLayoutPages.length > 0 && editedText === rawText;
+
+      if (isUneditedPdf && pageIdx !== undefined && pdfLayoutPages[pageIdx]) {
+        renderLayoutPage(ctx, pdfLayoutPages[pageIdx], scaledCfg);
+      } else {
+        renderHandwritingPage(ctx, text, scaledCfg, imageCache);
+      }
+
+      renderPhotoEffect(ctx, scaledCfg.pageWidth, scaledCfg.pageHeight);
     },
-    []
+    [layoutMode, pdfLayoutPages, editedText, rawText]
   );
 
   const [liveImageCache, setLiveImageCache] = useState<Record<string, HTMLImageElement>>({});
@@ -138,54 +182,94 @@ export default function ConvertPage() {
   // Live preview on customize step
   useEffect(() => {
     if (step === "customize" && previewCanvasRef.current) {
-      renderPreviewPage(editedText, config, previewCanvasRef.current, liveImageCache);
+      const isUneditedPdf = layoutMode === "1to1" && pdfLayoutPages.length > 0 && editedText === rawText;
+      if (isUneditedPdf) {
+        renderPreviewPage("", config, previewCanvasRef.current, {}, 0);
+      } else if (layoutMode === "1to1") {
+        const pagesHtml = editedText.split(/<hr[^>]*class="page-break"[^>]*>|<hr\s*\/?>|<div[^>]*class="page-break"[^>]*><\/div>/gi).map(p => p.trim());
+        renderPreviewPage(pagesHtml[0] || "", config, previewCanvasRef.current, liveImageCache, 0);
+      } else {
+        renderPreviewPage(editedText, config, previewCanvasRef.current, liveImageCache, 0);
+      }
     }
-  }, [step, config, editedText, renderPreviewPage, liveImageCache]);
+  }, [step, config, editedText, rawText, renderPreviewPage, liveImageCache, layoutMode, pdfLayoutPages]);
 
   // ─── Full render ────────────────────────────────────────────────────────
   const generateAllPages = useCallback(async () => {
     setIsProcessing(true);
     setProgress(0);
 
-    // Preload images first
+    const canvases: HTMLCanvasElement[] = [];
     const { preloadImages } = await import("@/lib/handwritingEngine");
     const imageCache = await preloadImages(editedText);
 
-    const pages = splitTextIntoPages(editedText, config);
-    const canvases: HTMLCanvasElement[] = [];
+    if (layoutMode === "1to1") {
+      const isUneditedPdf = pdfLayoutPages.length > 0 && editedText === rawText;
+      const pagesHtml = editedText.split(/<hr[^>]*class="page-break"[^>]*>|<hr\s*\/?>|<div[^>]*class="page-break"[^>]*><\/div>/gi).map(p => p.trim());
+      const numPages = isUneditedPdf ? pdfLayoutPages.length : pagesHtml.length;
 
-    for (let i = 0; i < pages.length; i++) {
-      const canvas = document.createElement("canvas");
-      canvas.width = config.pageWidth;
-      canvas.height = config.pageHeight;
-      const pageCfg = { ...config, seed: config.seed + i };
-      renderPreviewPage(pages[i], pageCfg, canvas, imageCache);
-      canvases.push(canvas);
-      setProgress(((i + 1) / pages.length) * 100);
-      await new Promise((r) => setTimeout(r, 10));
+      for (let i = 0; i < numPages; i++) {
+        const canvas = document.createElement("canvas");
+        canvas.width = config.pageWidth;
+        canvas.height = config.pageHeight;
+        const pageCfg = { ...config, seed: config.seed + i };
+        
+        if (isUneditedPdf) {
+          renderPreviewPage("", pageCfg, canvas, {}, i);
+        } else {
+          renderPreviewPage(pagesHtml[i] || "", pageCfg, canvas, imageCache, i);
+        }
+        
+        canvases.push(canvas);
+        setProgress(((i + 1) / numPages) * 100);
+        await new Promise((r) => setTimeout(r, 10));
+      }
+    } else {
+      const pages = splitTextIntoPages(editedText, config);
+      for (let i = 0; i < pages.length; i++) {
+        const canvas = document.createElement("canvas");
+        canvas.width = config.pageWidth;
+        canvas.height = config.pageHeight;
+        const pageCfg = { ...config, seed: config.seed + i };
+        renderPreviewPage(pages[i], pageCfg, canvas, imageCache, i);
+        canvases.push(canvas);
+        setProgress(((i + 1) / pages.length) * 100);
+        await new Promise((r) => setTimeout(r, 10));
+      }
     }
 
     setRenderedPages(canvases);
     setCurrentPageIdx(0);
     setIsProcessing(false);
     setStep("preview");
-  }, [editedText, config, renderPreviewPage]);
+  }, [editedText, rawText, config, renderPreviewPage, layoutMode, pdfLayoutPages]);
 
   // ─── Regenerate single page ─────────────────────────────────────────────
   const regeneratePage = useCallback(
     async (pageIdx: number) => {
       if (!renderedPages[pageIdx]) return;
-      const pages = splitTextIntoPages(editedText, config);
       const canvas = renderedPages[pageIdx];
       const pageCfg = { ...config, seed: Math.floor(Math.random() * 100000) + pageIdx };
-      
-      const { preloadImages } = await import("@/lib/handwritingEngine");
-      const imageCache = await preloadImages(pages[pageIdx] || "");
 
-      renderPreviewPage(pages[pageIdx] || "", pageCfg, canvas, imageCache);
+      const isUneditedPdf = layoutMode === "1to1" && pdfLayoutPages.length > 0 && editedText === rawText;
+
+      if (isUneditedPdf) {
+        renderPreviewPage("", pageCfg, canvas, {}, pageIdx);
+      } else if (layoutMode === "1to1") {
+        const pagesHtml = editedText.split(/<hr[^>]*class="page-break"[^>]*>|<hr\s*\/?>|<div[^>]*class="page-break"[^>]*><\/div>/gi).map(p => p.trim());
+        const { preloadImages } = await import("@/lib/handwritingEngine");
+        const imageCache = await preloadImages(pagesHtml[pageIdx] || "");
+        renderPreviewPage(pagesHtml[pageIdx] || "", pageCfg, canvas, imageCache, pageIdx);
+      } else {
+        const pages = splitTextIntoPages(editedText, config);
+        const { preloadImages } = await import("@/lib/handwritingEngine");
+        const imageCache = await preloadImages(pages[pageIdx] || "");
+        renderPreviewPage(pages[pageIdx] || "", pageCfg, canvas, imageCache, pageIdx);
+      }
+
       setRenderedPages([...renderedPages]);
     },
-    [renderedPages, editedText, config, renderPreviewPage]
+    [renderedPages, editedText, rawText, config, renderPreviewPage, layoutMode, pdfLayoutPages]
   );
 
   // ─── Export handlers ────────────────────────────────────────────────────
@@ -268,9 +352,9 @@ export default function ConvertPage() {
           <div className="flex-1 flex items-center justify-center p-6 animate-fade-in-up">
             <div className="w-full max-w-xl">
               <div className="text-center mb-8">
-                <h1 className="text-2xl sm:text-3xl font-bold mb-2">Upload PDF-mu</h1>
+                <h1 className="text-2xl sm:text-3xl font-bold mb-2">Upload Dokumen-mu</h1>
                 <p className="text-[var(--color-text-secondary)]">
-                  Drag-drop file PDF atau klik untuk memilih
+                  Drag-drop file PDF/DOCX atau klik untuk memilih
                 </p>
               </div>
 
@@ -287,7 +371,7 @@ export default function ConvertPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".pdf"
+                  accept=".pdf,.docx"
                   className="hidden"
                   onChange={onFileSelect}
                   id="pdf-upload"
@@ -302,10 +386,10 @@ export default function ConvertPage() {
                     </svg>
                   </div>
                   <p className="text-[var(--color-text-primary)] font-medium mb-1">
-                    {isProcessing ? "Memproses..." : "Klik atau drop file PDF di sini"}
+                    {isProcessing ? "Memproses..." : "Klik atau drop file PDF / DOCX di sini"}
                   </p>
                   <p className="text-sm text-[var(--color-text-muted)]">
-                    Mendukung PDF teks. Maks 50 halaman.
+                    Mendukung PDF teks dan file Word (.docx)
                   </p>
                 </div>
               </div>
@@ -371,6 +455,33 @@ export default function ConvertPage() {
                 <h2 className="text-xl font-bold mb-1">Kustomisasi</h2>
                 <p className="text-sm text-[var(--color-text-secondary)]">Atur gaya tulisan, kertas, dan tinta</p>
               </div>
+
+              {/* Layout Mode Selector (Show if pdfLayoutPages exists OR text has page breaks) */}
+              {(pdfLayoutPages.length > 0 || editedText.includes("page-break") || editedText.includes("<hr")) && (
+                <div>
+                  <p className="section-label">Mode Tata Letak</p>
+                  <div className="grid grid-cols-2 gap-3 mt-2">
+                    <button
+                      className={`selection-card ${layoutMode === "1to1" ? "active" : ""}`}
+                      onClick={() => setLayoutMode("1to1")}
+                    >
+                      <span className="text-lg">📐</span>
+                      <span className="card-label">
+                        {pdfLayoutPages.length > 0 && editedText === rawText
+                          ? "Ikuti PDF Asli (1:1)"
+                          : "Ikuti Halaman (1:1)"}
+                      </span>
+                    </button>
+                    <button
+                      className={`selection-card ${layoutMode === "reflow" ? "active" : ""}`}
+                      onClick={() => setLayoutMode("reflow")}
+                    >
+                      <span className="text-lg">📝</span>
+                      <span className="card-label">Teks Editor (Reflow)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Handwriting style */}
               <div>
@@ -447,6 +558,29 @@ export default function ConvertPage() {
                   className="mt-2"
                   id="font-size-slider"
                 />
+              </div>
+
+              {/* Export Resolution */}
+              <div>
+                <p className="section-label">Resolusi Hasil Gambar & PDF</p>
+                <div className="grid grid-cols-3 gap-3 mt-2">
+                  {([
+                    { id: 1, label: "Normal", desc: "96 DPI" },
+                    { id: 2, label: "Tinggi", desc: "192 DPI" },
+                    { id: 3, label: "Super", desc: "288 DPI" },
+                  ]).map((res) => (
+                    <button
+                      key={res.id}
+                      type="button"
+                      className={`selection-card ${config.resolutionScale === res.id ? "active" : ""}`}
+                      onClick={() => setConfig((c) => ({ ...c, resolutionScale: res.id }))}
+                    >
+                      <span className="text-lg font-bold">{res.id}x</span>
+                      <span className="card-label">{res.label}</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{res.desc}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Imperfection level */}

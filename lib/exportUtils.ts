@@ -30,8 +30,12 @@ export async function exportCanvasesAsPdf(
   if (canvases.length === 0) throw new Error("No pages to export");
 
   const firstCanvas = canvases[0];
-  const widthMm = (firstCanvas.width / 96) * 25.4; // px to mm at 96 DPI
-  const heightMm = (firstCanvas.height / 96) * 25.4;
+  // Standard A4 width is 794px at 96 DPI. Calculate scale relative to A4.
+  const resScale = firstCanvas.width > 794 ? Math.round(firstCanvas.width / 794) : 1;
+  const dpi = 96 * resScale;
+
+  const widthMm = (firstCanvas.width / dpi) * 25.4;
+  const heightMm = (firstCanvas.height / dpi) * 25.4;
 
   const pdf = new jsPDF({
     orientation: widthMm > heightMm ? "landscape" : "portrait",

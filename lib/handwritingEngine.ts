@@ -46,16 +46,38 @@ export interface RenderConfig {
   marginBottom: number;
   lineSpacing: number; // px between baselines
   seed: number;
+  resolutionScale?: number;
 }
 
 export interface DocumentBlock {
-  type: "paragraph" | "heading" | "list-item";
+  type: "paragraph" | "heading" | "list-item" | "table";
   text: string;
   level?: number;
+  align?: "left" | "center" | "right";
+  tableData?: {
+    headers: string[][];
+    rows: string[][];
+  };
+}
+
+export interface PdfLayoutItem {
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  bold: boolean;
+  italic: boolean;
 }
 
 export interface ParsedDocument {
-  pages: { blocks: DocumentBlock[] }[];
+  pages: { 
+    blocks: DocumentBlock[]; 
+    layoutPage?: {
+      width: number;
+      height: number;
+      items: PdfLayoutItem[];
+    };
+  }[];
 }
 
 export interface FormattedTextSegment {
@@ -65,15 +87,17 @@ export interface FormattedTextSegment {
 }
 
 export interface RenderBlock {
-  type: "heading" | "paragraph" | "list-item" | "table" | "image";
+  type: "heading" | "paragraph" | "list-item" | "table" | "image" | "code";
   level?: number;
   listType?: "bullet" | "number";
   listIndex?: number;
+  listLevel?: number;
   segments?: FormattedTextSegment[];
   tableData?: {
     headers: string[][];
     rows: string[][];
   };
+  text?: string;
   imgSrc?: string;
   imgElement?: HTMLImageElement;
 }
@@ -85,7 +109,7 @@ interface FormattedChar {
 }
 
 interface PageElement {
-  type: "text-line" | "table" | "image" | "heading" | "list-item-line";
+  type: "text-line" | "table" | "image" | "heading" | "list-item-line" | "code-line";
   y: number;
   height: number;
   chars?: FormattedChar[];
@@ -93,6 +117,7 @@ interface PageElement {
   isListItem?: boolean;
   listType?: "bullet" | "number";
   listIndex?: number;
+  listLevel?: number;
   tableData?: {
     headers: string[][];
     rows: string[][];
@@ -212,6 +237,14 @@ export function parseHtmlToBlocks(html: string, imageCache: Record<string, HTMLI
       const el = node as HTMLElement;
       const tagName = el.tagName.toUpperCase();
 
+      if (tagName === "PRE" || tagName === "CODE") {
+        blocks.push({
+          type: "code",
+          text: el.textContent || "",
+        });
+        return; // Skip children of preformatted elements
+      }
+
       if (tagName === "H1" || tagName === "H2") {
         blocks.push({
           type: "heading",
@@ -224,10 +257,23 @@ export function parseHtmlToBlocks(html: string, imageCache: Record<string, HTMLI
         const counter = { val: 1 };
         Array.from(el.childNodes).forEach((child) => traverse(child, "number", counter));
       } else if (tagName === "LI") {
+        // Calculate list nesting level in DOM tree
+        let listLevel = 0;
+        let parent = el.parentElement;
+        while (parent) {
+          const pTag = parent.tagName.toUpperCase();
+          if (pTag === "UL" || pTag === "OL") {
+            listLevel++;
+          }
+          parent = parent.parentElement;
+        }
+        listLevel = Math.max(0, listLevel - 1);
+
         blocks.push({
           type: "list-item",
           listType: currentListType || "bullet",
           listIndex: currentListType === "number" ? listCounter.val++ : undefined,
+          listLevel,
           segments: extractTextSegments(el),
         });
       } else if (tagName === "TABLE") {
@@ -427,7 +473,8 @@ export function layoutDocument(
 
     } else if (block.type === "paragraph" || block.type === "list-item") {
       const isList = block.type === "list-item";
-      const indent = isList ? 28 : 0;
+      const listLevel = block.listLevel || 0;
+      const indent = isList ? 24 + listLevel * 20 : 0;
       const fontSize = config.fontSize;
       const lineSpacing = fontSize * config.style.lineHeightMultiplier;
       const wrappedLines = wrapFormattedText(ctx, block.segments || [], fontSize, config.style.fontFamily, writableWidth - indent);
@@ -445,6 +492,7 @@ export function layoutDocument(
           isListItem: isList,
           listType: block.listType,
           listIndex: idx === 0 ? block.listIndex : undefined,
+          listLevel: isList ? listLevel : undefined,
         });
         currentY += lineSpacing;
       });
@@ -476,9 +524,8 @@ export function layoutDocument(
       if (!block.tableData) continue;
 
       const table = block.tableData;
-      const rowHeight = config.fontSize * 2.2;
-      const totalRows = (table.headers.length || 0) + (table.rows.length || 0);
-      const tableHeight = totalRows * rowHeight;
+      const layout = getTableLayout(ctx, table, writableWidth, config.fontSize, config.style.fontFamily);
+      const tableHeight = layout.totalHeight;
 
       if (currentY + tableHeight > pageHeight - marginBottom && currentElements.length > 0) {
         addPage();
@@ -491,6 +538,32 @@ export function layoutDocument(
         tableData: table,
       });
       currentY += tableHeight + 20;
+    } else if (block.type === "code") {
+      const codeText = block.text || "";
+      const lines = codeText.split("\n");
+      const fontSize = config.fontSize * 0.85;
+      const lineSpacing = fontSize * 1.5;
+
+      lines.forEach((lineText) => {
+        const chars: FormattedChar[] = lineText.split("").map((c) => ({
+          char: c,
+          bold: false,
+          italic: false,
+        }));
+
+        if (currentY + lineSpacing > pageHeight - marginBottom && currentElements.length > 0) {
+          addPage();
+        }
+
+        currentElements.push({
+          type: "code-line",
+          y: currentY + fontSize,
+          height: lineSpacing,
+          chars,
+        });
+        currentY += lineSpacing;
+      });
+      currentY += fontSize * 0.4;
     }
   }
 
@@ -542,6 +615,85 @@ function drawHanddrawnLine(
   ctx.restore();
 }
 
+function wrapCellText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  fontSize: number,
+  fontFamily: string
+): string[] {
+  ctx.font = `${fontSize}px ${fontFamily}`;
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const testLine = currentLine ? currentLine + " " + word : word;
+    const testWidth = ctx.measureText(testLine).width;
+    if (testWidth > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  return lines.length > 0 ? lines : [""];
+}
+
+interface TableLayoutInfo {
+  colWidths: number[];
+  rowHeights: number[];
+  totalHeight: number;
+  wrappedCells: string[][][];
+}
+
+function getTableLayout(
+  ctx: CanvasRenderingContext2D,
+  table: { headers: string[][]; rows: string[][] },
+  width: number,
+  fontSize: number,
+  fontFamily: string
+): TableLayoutInfo {
+  const allRows = [...table.headers, ...table.rows];
+  if (allRows.length === 0) {
+    return { colWidths: [], rowHeights: [], totalHeight: 0, wrappedCells: [] };
+  }
+
+  const colCount = Math.max(...allRows.map((r) => r.length));
+  const colWidths = Array(colCount).fill(width / colCount);
+  const paddingX = 12;
+
+  const wrappedCells: string[][][] = [];
+  const rowHeights: number[] = [];
+  let totalHeight = 0;
+
+  allRows.forEach((row) => {
+    const wrappedRow: string[][] = [];
+    let maxLines = 1;
+
+    for (let colIdx = 0; colIdx < colCount; colIdx++) {
+      const cellText = row[colIdx] || "";
+      const colW = colWidths[colIdx];
+      const maxW = colW - paddingX * 2;
+      const lines = wrapCellText(ctx, cellText, maxW, fontSize, fontFamily);
+      wrappedRow.push(lines);
+      if (lines.length > maxLines) {
+        maxLines = lines.length;
+      }
+    }
+
+    wrappedCells.push(wrappedRow);
+    const rowH = maxLines * (fontSize * 1.35) + 16;
+    rowHeights.push(rowH);
+    totalHeight += rowH;
+  });
+
+  return { colWidths, rowHeights, totalHeight, wrappedCells };
+}
+
 function drawTable(
   ctx: CanvasRenderingContext2D,
   table: { headers: string[][]; rows: string[][] },
@@ -551,63 +703,78 @@ function drawTable(
   fontSize: number,
   fontFamily: string,
   rng: () => number,
-  color: string
+  color: string,
+  resScale: number = 1.0
 ): number {
-  const allRows = [...table.headers, ...table.rows];
-  if (allRows.length === 0) return 0;
-
-  const colCount = Math.max(...allRows.map((r) => r.length));
-  const colWidth = width / colCount;
-  const rowHeight = fontSize * 2.2;
+  const layout = getTableLayout(ctx, table, width, fontSize, fontFamily);
+  if (layout.totalHeight === 0) return 0;
 
   ctx.font = `${fontSize}px ${fontFamily}`;
-  ctx.textBaseline = "middle";
+  ctx.textBaseline = "alphabetic";
+
+  let currentY = y;
+  const allRows = [...table.headers, ...table.rows];
 
   allRows.forEach((row, rowIdx) => {
-    const rowY = y + rowIdx * rowHeight;
+    const rowH = layout.rowHeights[rowIdx];
     const isHeader = rowIdx < table.headers.length;
+    const wrappedRow = layout.wrappedCells[rowIdx];
 
-    row.forEach((cellText, colIdx) => {
-      const cellX = x + colIdx * colWidth;
+    // Background for header row
+    if (isHeader) {
+      ctx.save();
+      ctx.fillStyle = "rgba(100, 100, 100, 0.05)";
+      ctx.fillRect(x + 2, currentY + 2, width - 4, rowH - 4);
+      ctx.restore();
+    }
 
-      if (isHeader) {
-        ctx.save();
-        ctx.fillStyle = "rgba(100, 100, 100, 0.05)";
-        ctx.fillRect(cellX + 2, rowY + 2, colWidth - 4, rowHeight - 4);
-        ctx.restore();
-      }
+    row.forEach((_, colIdx) => {
+      const colX = x + layout.colWidths.slice(0, colIdx).reduce((a, b) => a + b, 0);
+      const colW = layout.colWidths[colIdx];
+      const cellLines = wrappedRow[colIdx] || [""];
 
       ctx.save();
       ctx.fillStyle = color;
       ctx.font = `${isHeader ? "bold " : ""}${fontSize}px ${fontFamily}`;
-      
+
       ctx.beginPath();
-      ctx.rect(cellX + 6, rowY + 2, colWidth - 12, rowHeight - 4);
+      ctx.rect(colX + 4, currentY + 2, colW - 8, rowH - 4);
       ctx.clip();
 
-      const textY = rowY + rowHeight / 2;
-      const textX = cellX + 10;
-      
-      ctx.fillText(cellText, textX, textY);
+      const lineHeight = fontSize * 1.35;
+      const totalTextH = cellLines.length * lineHeight;
+      const startTextY = currentY + (rowH - totalTextH) / 2 + fontSize * 0.85;
+
+      cellLines.forEach((lineText, lineIdx) => {
+        ctx.fillText(lineText, colX + 10, startTextY + lineIdx * lineHeight);
+      });
+
       ctx.restore();
     });
+
+    currentY += rowH;
   });
 
-  const totalHeight = allRows.length * rowHeight;
-  
+  // Draw hand-drawn borders
+  let runningY = y;
   for (let i = 0; i <= allRows.length; i++) {
-    const lineY = y + i * rowHeight;
     const isOuter = i === 0 || i === allRows.length;
-    drawHanddrawnLine(ctx, x, lineY, x + width, lineY, rng, color, isOuter ? 1.5 : 0.8);
+    drawHanddrawnLine(ctx, x, runningY, x + width, runningY, rng, color, (isOuter ? 1.5 : 0.8) * resScale);
+    if (i < allRows.length) {
+      runningY += layout.rowHeights[i];
+    }
   }
 
-  for (let i = 0; i <= colCount; i++) {
-    const lineX = x + i * colWidth;
-    const isOuter = i === 0 || i === colCount;
-    drawHanddrawnLine(ctx, lineX, y, lineX, y + totalHeight, rng, color, isOuter ? 1.5 : 0.8);
+  let runningX = x;
+  for (let i = 0; i <= layout.colWidths.length; i++) {
+    const isOuter = i === 0 || i === layout.colWidths.length;
+    drawHanddrawnLine(ctx, runningX, y, runningX, y + layout.totalHeight, rng, color, (isOuter ? 1.5 : 0.8) * resScale);
+    if (i < layout.colWidths.length) {
+      runningX += layout.colWidths[i];
+    }
   }
 
-  return totalHeight;
+  return layout.totalHeight;
 }
 
 // ─── Main Rendering Function ────────────────────────────────────────────────
@@ -633,6 +800,192 @@ export function renderHandwritingPage(
   }
 }
 
+export function renderLayoutPage(
+  ctx: CanvasRenderingContext2D,
+  layoutPage: { width: number; height: number; items: PdfLayoutItem[] },
+  config: RenderConfig
+): void {
+  const rng = mulberry32(config.seed);
+  const noise2d = createNoise2D(rng);
+  const scale = IMPERFECTION_SCALE[config.imperfection];
+
+  const scaleX = config.pageWidth / layoutPage.width;
+  const scaleY = config.pageHeight / layoutPage.height;
+  const scaleSize = (scaleX + scaleY) / 2;
+
+  ctx.textBaseline = "alphabetic";
+
+  // 1. Group items into logical lines based on Y coordinate proximity in canvas space
+  const itemsWithY = layoutPage.items.map((item, idx) => {
+    const rawCanvasY = config.pageHeight - (item.y * scaleY);
+    const canvasX = item.x * scaleX;
+    return { item, idx, rawCanvasY, canvasX };
+  });
+
+  const sortedItems = [...itemsWithY].sort((a, b) => a.rawCanvasY - b.rawCanvasY);
+  
+  interface LogicalLine {
+    avgY: number;
+    items: typeof itemsWithY;
+  }
+  
+  const logicalLines: LogicalLine[] = [];
+  const yTolerance = config.fontSize * 0.45; // Tolerance for items to be considered on the same line
+
+  sortedItems.forEach((item) => {
+    let foundLine = logicalLines.find(line => Math.abs(line.avgY - item.rawCanvasY) <= yTolerance);
+    if (foundLine) {
+      foundLine.items.push(item);
+      foundLine.avgY = foundLine.items.reduce((sum, it) => sum + it.rawCanvasY, 0) / foundLine.items.length;
+    } else {
+      logicalLines.push({
+        avgY: item.rawCanvasY,
+        items: [item]
+      });
+    }
+  });
+
+  logicalLines.sort((a, b) => a.avgY - b.avgY);
+
+  // 2. Map logical lines to snapped coordinates to prevent overlapping/collapsing
+  const snappedLineY = new Map<number, number>();
+
+  if (config.paper === "lined") {
+    const spacing = config.lineSpacing || config.fontSize * config.style.lineHeightMultiplier;
+    const y0 = config.marginTop + config.fontSize;
+    let prevSnappedIndex: number | null = null;
+
+    logicalLines.forEach((line) => {
+      const idealIndex = Math.round((line.avgY - y0) / spacing);
+      let snappedIndex = idealIndex;
+      if (prevSnappedIndex !== null) {
+        snappedIndex = Math.max(idealIndex, prevSnappedIndex + 1);
+      }
+      prevSnappedIndex = snappedIndex;
+      const snappedY = y0 + snappedIndex * spacing;
+
+      line.items.forEach((it) => {
+        snappedLineY.set(it.idx, snappedY);
+      });
+    });
+  } else if (config.paper === "grid") {
+    const gridSize = 20;
+    let prevSnappedY: number | null = null;
+
+    logicalLines.forEach((line) => {
+      const idealY = Math.round(line.avgY / gridSize) * gridSize;
+      let snappedY = idealY;
+      if (prevSnappedY !== null) {
+        snappedY = Math.max(idealY, prevSnappedY + gridSize);
+      }
+      prevSnappedY = snappedY;
+
+      line.items.forEach((it) => {
+        snappedLineY.set(it.idx, snappedY);
+      });
+    });
+  } else {
+    // Plain paper (no snapping)
+    logicalLines.forEach((line) => {
+      line.items.forEach((it) => {
+        snappedLineY.set(it.idx, it.rawCanvasY);
+      });
+    });
+  }
+
+  layoutPage.items.forEach((item, idx) => {
+    const canvasY = snappedLineY.get(idx) ?? (config.pageHeight - (item.y * scaleY));
+    const canvasX = item.x * scaleX;
+    
+    // Allow the user to scale 1:1 text sizes using the global fontSize configuration (baseline 22px)
+    const fontScaleFactor = config.fontSize / 22;
+    const baseFontSize = item.fontSize * scaleSize * fontScaleFactor;
+    let currentX = canvasX;
+    const text = item.text;
+
+    // Apply baseline slant/wave to the entire item block
+    const baselineOffset = noise2d(idx * 0.3, 0) * 2 * scale;
+    const itemSlant = (noise2d(idx * 0.7, 1.5) * 1.0 + config.style.naturalSlant) * scale;
+    const itemSlantRad = (itemSlant * Math.PI) / 180;
+
+    for (let charIdx = 0; charIdx < text.length; charIdx++) {
+      const char = text[charIdx];
+
+      const rotJitter = noise2d(charIdx * 0.5, idx * 0.3) * 4 * scale;
+      const yJitter = noise2d(charIdx * 0.4 + 10, idx * 0.2) * 2.5 * scale;
+      const sizeJitter = 1 + noise2d(charIdx * 0.6 + 20, idx * 0.4) * 0.05 * scale;
+      const spacingJitter = noise2d(charIdx * 0.3 + 30, idx * 0.5) * 1.0 * scale;
+
+      const fontSize = baseFontSize * sizeJitter;
+      const italicSlant = item.italic ? 12 : 0;
+
+      ctx.font = `${fontSize}px ${config.style.fontFamily}`;
+      
+      const opacityJitter = config.ink.opacity - Math.abs(noise2d(charIdx * 0.8, idx * 0.6)) * 0.12 * scale;
+      const resScale = config.resolutionScale || 1.0;
+      const widthJitter = 1 * (1 + noise2d(charIdx * 0.9 + 50, idx * 0.7) * 0.15 * scale) * resScale;
+
+      ctx.globalAlpha = Math.max(0.5, Math.min(1, opacityJitter));
+      ctx.fillStyle = config.ink.color;
+
+      if (config.ink.id === "pencil") {
+        ctx.shadowColor = "rgba(60,60,60,0.3)";
+        ctx.shadowBlur = 1.2 * scale;
+      } else {
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+      }
+
+      const slopeOffset = (currentX - canvasX) * Math.tan(itemSlantRad);
+      const charX = currentX + spacingJitter;
+      const charY = canvasY + baselineOffset + yJitter + slopeOffset;
+
+      ctx.save();
+      ctx.translate(charX, charY);
+      ctx.rotate(((rotJitter + italicSlant) * Math.PI) / 180);
+      ctx.lineWidth = widthJitter;
+
+      if (config.ink.id !== "pencil" && scale > 0.6) {
+        ctx.strokeStyle = config.ink.color;
+        ctx.lineWidth = 0.3 * widthJitter;
+        ctx.globalAlpha = Math.max(0.3, opacityJitter * 0.4);
+        ctx.strokeText(char, 0, 0);
+        ctx.globalAlpha = Math.max(0.5, Math.min(1, opacityJitter));
+      }
+
+      ctx.fillText(char, 0, 0);
+      ctx.restore();
+
+      const charWidth = ctx.measureText(char).width;
+      currentX += charWidth + spacingJitter * 0.5;
+    }
+  });
+
+  // Human imperfections overlay
+  if (scale >= 1.0) {
+    const blotCount = Math.floor(rng() * 3 * scale);
+    const writableWidth = config.pageWidth - config.marginLeft - config.marginRight;
+    for (let i = 0; i < blotCount; i++) {
+      const bx = config.marginLeft + rng() * writableWidth;
+      const by = config.marginTop + rng() * (config.pageHeight - config.marginTop - config.marginBottom);
+      const br = 0.5 + rng() * 1.5;
+      ctx.save();
+      ctx.globalAlpha = 0.15 + rng() * 0.15;
+      ctx.fillStyle = config.ink.color;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // Reset
+  ctx.globalAlpha = 1;
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+}
+
+
 function renderPage(
   ctx: CanvasRenderingContext2D,
   page: RenderPage,
@@ -648,21 +1001,39 @@ function renderPage(
   ctx.textBaseline = "alphabetic";
 
   page.elements.forEach((el, lineIdx) => {
-    if (el.type === "heading" || el.type === "text-line" || el.type === "list-item-line") {
+    if (el.type === "heading" || el.type === "text-line" || el.type === "list-item-line" || el.type === "code-line") {
       const chars = el.chars || [];
+      const isCode = el.type === "code-line";
       let currentX = marginLeft;
       
       if (el.type === "list-item-line") {
-        currentX += 28;
+        const listLevel = el.listLevel || 0;
+        const indent = 24 + listLevel * 20;
+        currentX += indent;
         
         if (el.listIndex !== undefined) {
           ctx.save();
           ctx.font = `${config.fontSize}px ${config.style.fontFamily}`;
           ctx.fillStyle = config.ink.color;
-          const prefix = el.listType === "number" ? `${el.listIndex}. ` : "• ";
-          ctx.fillText(prefix, marginLeft + 8, el.y);
+          
+          let prefix = "";
+          if (el.listType === "number") {
+            prefix = `${el.listIndex}. `;
+          } else {
+            if (listLevel === 0) {
+              prefix = "• ";
+            } else if (listLevel === 1) {
+              prefix = "– ";
+            } else {
+              prefix = "▪ ";
+            }
+          }
+          
+          ctx.fillText(prefix, marginLeft + indent - 16, el.y);
           ctx.restore();
         }
+      } else if (isCode) {
+        currentX += 16;
       }
 
       const baselineOffset = noise2d(lineIdx * 0.3, 0) * 3 * scale;
@@ -672,26 +1043,29 @@ function renderPage(
       for (let charIdx = 0; charIdx < chars.length; charIdx++) {
         const fc = chars[charIdx];
 
-        const rotJitter = noise2d(charIdx * 0.5, lineIdx * 0.3) * 4 * scale;
-        const yJitter = noise2d(charIdx * 0.4 + 10, lineIdx * 0.2) * 2.5 * scale;
-        const sizeJitter = 1 + noise2d(charIdx * 0.6 + 20, lineIdx * 0.4) * 0.07 * scale;
-        const spacingJitter = noise2d(charIdx * 0.3 + 30, lineIdx * 0.5) * 1.5 * scale;
+        const rotJitter = noise2d(charIdx * 0.5, lineIdx * 0.3) * 4 * scale * (isCode ? 0.25 : 1);
+        const yJitter = noise2d(charIdx * 0.4 + 10, lineIdx * 0.2) * 2.5 * scale * (isCode ? 0.25 : 1);
+        const sizeJitter = 1 + noise2d(charIdx * 0.6 + 20, lineIdx * 0.4) * 0.07 * scale * (isCode ? 0.4 : 1);
+        const spacingJitter = noise2d(charIdx * 0.3 + 30, lineIdx * 0.5) * 1.5 * scale * (isCode ? 0.1 : 1);
 
-        const baseFontSize = el.type === "heading" ? config.fontSize * (el.headingLevel === 1 ? 1.4 : 1.2) : config.fontSize;
+        const baseFontSize = el.type === "heading" 
+          ? config.fontSize * (el.headingLevel === 1 ? 1.4 : 1.2) 
+          : (isCode ? config.fontSize * 0.85 : config.fontSize);
         const fontSize = baseFontSize * sizeJitter;
         const italicSlant = fc.italic ? 12 : 0;
 
-        ctx.font = `${fc.bold ? "bold " : ""}${fontSize}px ${config.style.fontFamily}`;
+        ctx.font = `${fontSize}px ${config.style.fontFamily}`;
         
         const opacityJitter = config.ink.opacity - Math.abs(noise2d(charIdx * 0.8, lineIdx * 0.6)) * 0.12 * scale;
-        const widthJitter = (fc.bold ? 1.8 : 1) * (1 + noise2d(charIdx * 0.9 + 50, lineIdx * 0.7) * 0.15 * scale);
+        const resScale = config.resolutionScale || 1.0;
+        const widthJitter = 1 * (1 + noise2d(charIdx * 0.9 + 50, lineIdx * 0.7) * 0.15 * scale) * resScale;
 
         ctx.globalAlpha = Math.max(0.5, Math.min(1, opacityJitter));
         ctx.fillStyle = config.ink.color;
 
         if (config.ink.id === "pencil") {
           ctx.shadowColor = "rgba(60,60,60,0.3)";
-          ctx.shadowBlur = (fc.bold ? 2.0 : 1.2) * scale;
+          ctx.shadowBlur = 1.2 * scale;
         } else {
           ctx.shadowColor = "transparent";
           ctx.shadowBlur = 0;
@@ -699,16 +1073,16 @@ function renderPage(
 
         const slopeOffset = (currentX - marginLeft) * Math.tan(lineSlantRad);
         const charX = currentX + spacingJitter;
-        const charY = el.y + baselineOffset + yJitter + slopeOffset;
+        const charY = el.y + baselineOffset + yJitter + (isCode ? 0 : slopeOffset);
 
         ctx.save();
         ctx.translate(charX, charY);
-        ctx.rotate(((rotJitter + italicSlant) * Math.PI) / 180);
+        ctx.rotate((((isCode ? 0 : rotJitter) + italicSlant) * Math.PI) / 180);
         ctx.lineWidth = widthJitter;
 
         if (config.ink.id !== "pencil" && scale > 0.6) {
           ctx.strokeStyle = config.ink.color;
-          ctx.lineWidth = (fc.bold ? 0.6 : 0.3) * widthJitter;
+          ctx.lineWidth = 0.3 * widthJitter;
           ctx.globalAlpha = Math.max(0.3, opacityJitter * 0.4);
           ctx.strokeText(fc.char, 0, 0);
           ctx.globalAlpha = Math.max(0.5, Math.min(1, opacityJitter));
@@ -717,7 +1091,7 @@ function renderPage(
         ctx.fillText(fc.char, 0, 0);
         ctx.restore();
 
-        const charWidth = ctx.measureText(fc.char).width;
+        const charWidth = isCode ? (config.fontSize * 0.48) : ctx.measureText(fc.char).width;
         currentX += charWidth + spacingJitter * 0.5;
       }
     } else if (el.type === "image" && el.imgElement) {
@@ -739,7 +1113,8 @@ function renderPage(
         config.fontSize,
         config.style.fontFamily,
         rng,
-        config.ink.color
+        config.ink.color,
+        config.resolutionScale || 1.0
       );
     }
   });

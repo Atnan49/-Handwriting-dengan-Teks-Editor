@@ -18,10 +18,14 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
 
   // Sync initial content once when editor mounts
   useEffect(() => {
-    if (editorRef.current && initialHtml && editorRef.current.innerHTML !== initialHtml) {
-      editorRef.current.innerHTML = initialHtml;
+    if (isMounted && editorRef.current) {
+      if (initialHtml && editorRef.current.innerHTML !== initialHtml) {
+        editorRef.current.innerHTML = initialHtml;
+      } else if (!initialHtml && editorRef.current.innerHTML === "") {
+        editorRef.current.innerHTML = "<p><br></p>";
+      }
     }
-  }, [initialHtml]);
+  }, [initialHtml, isMounted]);
 
   const handleInput = () => {
     if (editorRef.current) {
@@ -79,6 +83,11 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
       <p><br></p>
     `;
     executeCommand("insertHTML", tableHtml);
+  };
+
+  const insertPageBreak = () => {
+    const hrHtml = `<hr class="page-break" />`;
+    executeCommand("insertHTML", hrHtml);
   };
 
   if (!isMounted) {
@@ -196,6 +205,21 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
           className="hidden"
           onChange={handleImageInsert}
         />
+
+        {/* Page Break */}
+        <button
+          onClick={insertPageBreak}
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors flex items-center gap-1 text-xs"
+          title="Pecah Halaman (Page Break)"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6" strokeDasharray="3,3" />
+            <line x1="3" y1="18" x2="21" y2="18" strokeDasharray="3,3" />
+            <path d="M8 8l4 4 4-4" />
+            <path d="M16 16l-4-4-4 4" />
+          </svg>
+          <span className="hidden sm:inline">Pecah Halaman</span>
+        </button>
 
         <div className="h-5 w-[1px] bg-[var(--color-border)] mx-1" />
 
