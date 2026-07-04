@@ -296,9 +296,10 @@ export default function ConvertPage() {
   return (
     <main className="min-h-screen flex flex-col">
       {/* ─── Top Bar ─── */}
-      <header className="sticky top-0 z-50 flex items-center justify-between px-4 sm:px-6 py-3 backdrop-blur-xl bg-[rgba(10,10,18,0.8)] border-b border-[var(--color-border)]">
-        <Link href="/" className="text-lg font-bold text-gradient">
-          TulisTangan
+      <header className="sticky top-0 z-50 flex items-center justify-between px-4 sm:px-6 py-3 backdrop-blur-xl bg-[rgba(255,255,255,0.8)] border-b border-[var(--color-border)]">
+        <Link href="/" className="flex items-center gap-2">
+          <img src="/logo.png" alt="Logo TulisTangan" className="h-7 w-auto" />
+          <span className="text-lg font-bold text-gradient hidden sm:inline-block">TulisTangan.id</span>
         </Link>
 
         {/* Step indicators */}

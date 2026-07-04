@@ -106,11 +106,11 @@ export default function LandingPage() {
   return (
     <main className="flex flex-col min-h-screen overflow-hidden">
       {/* ─── Navbar ─── */}
-      <nav className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 py-4 backdrop-blur-xl bg-[rgba(10,10,18,0.7)] border-b border-[var(--color-border)]">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold text-gradient">TulisTangan</span>
-          <span className="text-xs text-[var(--color-text-muted)] font-medium">.id</span>
-        </div>
+      <nav className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 py-4 backdrop-blur-xl bg-[rgba(255,255,255,0.7)] border-b border-[var(--color-border)]">
+        <Link href="/" className="flex items-center gap-2.5">
+          <img src="/logo.png" alt="Logo TulisTangan" className="h-8 w-auto" />
+          <span className="text-xl font-bold text-gradient hidden sm:inline-block">TulisTangan.id</span>
+        </Link>
         <Link href="/convert" className="btn-primary text-sm !py-2 !px-5">
           <span className="flex items-center gap-1.5">Mulai Konversi <ArrowRight /></span>
         </Link>
@@ -123,12 +123,12 @@ export default function LandingPage() {
         style={{ background: "var(--gradient-glow)" }}
       >
         {/* Ambient orbs */}
-        <div className="ambient-orb w-[500px] h-[500px] bg-[#6366f1] -top-40 -left-40 animate-float" />
-        <div className="ambient-orb w-[400px] h-[400px] bg-[#14b8a6] -bottom-32 -right-32 animate-float" style={{ animationDelay: "3s" }} />
-        <div className="ambient-orb w-[300px] h-[300px] bg-[#a855f7] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-float" style={{ animationDelay: "1.5s" }} />
+        <div className="ambient-orb w-[500px] h-[500px] bg-[#0284c7] -top-40 -left-40 animate-float" />
+        <div className="ambient-orb w-[400px] h-[400px] bg-[#10b981] -bottom-32 -right-32 animate-float" style={{ animationDelay: "3s" }} />
+        <div className="ambient-orb w-[300px] h-[300px] bg-[#06b6d4] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-float" style={{ animationDelay: "1.5s" }} />
 
         <div className="relative z-10 max-w-3xl mx-auto animate-fade-in-up">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[rgba(99,102,241,0.12)] border border-[rgba(99,102,241,0.25)] text-sm text-[var(--color-primary-300)] mb-6 backdrop-blur-md">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[rgba(2,132,199,0.12)] border border-[rgba(2,132,199,0.25)] text-sm text-[var(--color-primary-600)] mb-6 backdrop-blur-md">
             <SparklesIcon />
             <span>Simulasi tulisan tangan paling realistis</span>
           </div>
@@ -193,7 +193,7 @@ export default function LandingPage() {
                 key={f.title}
                 className={`glass-card p-6 opacity-0 animate-fade-in-up stagger-${i + 1}`}
               >
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-[rgba(99,102,241,0.12)] text-[var(--color-primary-400)] mb-4">
+                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-[rgba(2,132,199,0.12)] text-[var(--color-primary-400)] mb-4">
                   {f.icon}
                 </div>
                 <h3 className="text-lg font-semibold mb-2">{f.title}</h3>
@@ -215,7 +215,7 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-3 gap-8">
             {STEPS.map((s, i) => (
               <div key={s.num} className={`text-center opacity-0 animate-fade-in-up stagger-${i + 1}`}>
-                <div className="w-20 h-20 mx-auto flex items-center justify-center rounded-2xl bg-[rgba(99,102,241,0.1)] border border-[var(--color-border)] text-[var(--color-primary-400)] mb-5">
+                <div className="w-20 h-20 mx-auto flex items-center justify-center rounded-2xl bg-[rgba(2,132,199,0.1)] border border-[var(--color-border)] text-[var(--color-primary-400)] mb-5">
                   {s.icon}
                 </div>
                 <span className="text-xs font-bold text-[var(--color-primary-400)] tracking-widest">{s.num}</span>
@@ -229,8 +229,8 @@ export default function LandingPage() {
 
       {/* ─── CTA ─── */}
       <section className="py-24 px-6 relative overflow-hidden">
-        <div className="ambient-orb w-[400px] h-[400px] bg-[#6366f1] -left-40 top-0" />
-        <div className="ambient-orb w-[350px] h-[350px] bg-[#14b8a6] -right-32 bottom-0" />
+        <div className="ambient-orb w-[400px] h-[400px] bg-[#0284c7] -left-40 top-0" />
+        <div className="ambient-orb w-[350px] h-[350px] bg-[#10b981] -right-32 bottom-0" />
         <div className="relative z-10 max-w-2xl mx-auto text-center animate-fade-in-up">
           <h2 className="text-3xl sm:text-4xl font-bold mb-4">
             Siap Mengubah PDF-mu?
@@ -250,7 +250,10 @@ export default function LandingPage() {
       {/* ─── Footer ─── */}
       <footer className="py-8 px-6 border-t border-[var(--color-border)] bg-[var(--color-bg-surface)]">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[var(--color-text-muted)]">
-          <span className="font-semibold text-gradient">TulisTangan.id</span>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="Logo TulisTangan" className="h-6 w-auto" />
+            <span className="font-semibold text-gradient">TulisTangan.id</span>
+          </div>
           <p>© 2026 TulisTangan.id — Alat bantu membuat catatan pribadi lebih cepat.</p>
           <p className="text-xs">
             Gunakan secara bertanggung jawab. Tidak mendukung penyalahgunaan akademik.

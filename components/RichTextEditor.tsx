@@ -97,7 +97,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
   return (
     <div className="flex flex-col flex-1 rounded-xl border border-[var(--color-border)] overflow-hidden bg-[var(--color-bg-surface)]">
       {/* ─── Editor Toolbar ─── */}
-      <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-[rgba(26,26,46,0.8)] border-b border-[var(--color-border)] sticky top-0 z-10">
+      <div className="flex flex-wrap items-center gap-1.5 p-2.5 bg-[rgba(241,245,249,0.85)] border-b border-[var(--color-border)] sticky top-0 z-10">
         {/* Headings */}
         <select
           onChange={(e) => executeCommand("formatBlock", e.target.value)}
@@ -114,7 +114,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Bold */}
         <button
           onClick={() => executeCommand("bold")}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
           title="Tebalkan (Bold)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -126,7 +126,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Italic */}
         <button
           onClick={() => executeCommand("italic")}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
           title="Miringkan (Italic)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -140,7 +140,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Bullet List */}
         <button
           onClick={() => executeCommand("insertUnorderedList")}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
           title="Bullet List"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -156,7 +156,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Numbered List */}
         <button
           onClick={() => executeCommand("insertOrderedList")}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
           title="Numbered List"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -172,7 +172,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Table */}
         <button
           onClick={insertTable}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors flex items-center gap-1 text-xs"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1 text-xs"
           title="Insert Table"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -188,7 +188,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Image */}
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors flex items-center gap-1 text-xs"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1 text-xs"
           title="Insert Image"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -209,7 +209,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Page Break */}
         <button
           onClick={insertPageBreak}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors flex items-center gap-1 text-xs"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors flex items-center gap-1 text-xs"
           title="Pecah Halaman (Page Break)"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -226,7 +226,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
         {/* Clear formatting */}
         <button
           onClick={() => executeCommand("removeFormat")}
-          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-white transition-colors"
+          className="p-1.5 rounded hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
           title="Hapus Format"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -236,7 +236,7 @@ export default function RichTextEditor({ initialHtml, onChange }: RichTextEditor
       </div>
 
       {/* ─── Virtual Page Workspace ─── */}
-      <div className="flex-1 overflow-auto bg-[#1a1a2e] p-6 flex justify-center items-start min-h-[500px]">
+      <div className="flex-1 overflow-auto bg-[var(--color-bg-base)] p-6 flex justify-center items-start min-h-[500px]">
         <div
           ref={editorRef}
           contentEditable
