@@ -106,7 +106,7 @@ export default function LandingPage() {
   return (
     <main className="flex flex-col min-h-screen overflow-hidden">
       {/* ─── Navbar ─── */}
-      <nav className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 py-4 backdrop-blur-xl bg-[rgba(255,255,255,0.7)] border-b border-[var(--color-border)]">
+      <nav className="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-6 py-4 backdrop-blur-xl bg-[rgba(253,251,247,0.85)] border-b border-[var(--color-border)]">
         <Link href="/">
           <img src="/logo.png" alt="Logo TulisTangan" className="h-10 w-10 rounded-full object-cover" />
         </Link>
